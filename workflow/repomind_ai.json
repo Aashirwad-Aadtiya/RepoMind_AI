@@ -1,0 +1,901 @@
+{
+  "name": "RepoMind_AI",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "deep-repo-analyze",
+        "options": {}
+      },
+      "id": "8b5549f3-9f32-4961-a8af-eac515710f46",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -864,
+        -96
+      ],
+      "webhookId": "12e45e72-93b9-443b-99a6-f376b0a4aff8"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n\tconst url = item.json.repoURL;\n\n\t// Remove trailing slash if exists\n\tconst clean = url.replace(/\\/$/, \"\");\n\n\t// Extract repo owner + name using regex\n\tconst match = clean.match(/github\\.com\\/([^\\/]+)\\/([^\\/]+)/);\n\n\tif (!match) {\n\t\tthrow new Error(\"Invalid GitHub URL\");\n\t}\n\n\tconst owner = match[1];\n\tconst repo = match[2];\n\n    const level =  item.json.level|| 'deep'; \n\n\treturn {\n\t\tjson: {\n\t\t\t...item.json,\n\t\t\towner,\n\t\t\trepo,\n          level\n\t\t}\n\t};\n});\n"
+      },
+      "id": "a24f7d31-62f3-4dcf-8a5e-d9e208c0a2eb",
+      "name": "Parse URL",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -640,
+        -96
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "04442e69-9e9a-41e3-9d92-c786299257ab",
+                    "leftValue": "={{ $json.level }}",
+                    "rightValue": "deep",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -192,
+        -96
+      ],
+      "id": "02aaa62c-eda4-48fd-b5a5-a6b2795441c9",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "jsCode": "const owner = $('Switch').first().json.owner;\nconst repo = $('Switch').first().json.repo;\nconst treeData = $input.first().json;\n\n// CONFIGURATION\nconst MAX_FILES = 1000; // Set your limit here\nconst EXCLUSION_PATTERNS = [\n  '.eslintrc',\n  'config/config.js',\n  'next.config.js',\n  'package.json',\n  '.github/',\n  'node_modules/',\n  'dist/',\n  'build/',\n  '.next/',\n  'coverage/',\n  '.nuxt/',\n  'vendor/',\n  '__pycache__/',\n  '.git/',\n  '.vscode/',\n  '.idea/',\n  'package-lock.json',\n  'yarn.lock',\n  'pnpm-lock.yaml',\n  '.env',\n  '.DS_Store',\n  '.eslintrc.json',  \n  '.gitignore',\n  'LICENSE',\n  'jsconfig.json',\n];\n\n// File extensions to exclude\nconst EXCLUDED_EXTENSIONS = [\n  '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico',\n  '.mp4', '.mp3', '.wav', '.avi',\n  '.zip', '.tar', '.gz', '.rar',\n  '.pdf', '.doc', '.docx',\n  '.woff', '.woff2', '.ttf', '.eot',\n  '.min.js', '.min.css',\n  '.map'\n];\n\n// Helper function to check if path should be excluded\nfunction shouldExclude(path) {\n  // Check exclusion patterns\n  for (const pattern of EXCLUSION_PATTERNS) {\n    if (path.includes(pattern)) {\n      return true;\n    }\n  }\n  \n  // Check file extensions\n  for (const ext of EXCLUDED_EXTENSIONS) {\n    if (path.endsWith(ext)) {\n      return true;\n    }\n  }\n  \n  return false;\n}\n\n// Check if tree was truncated (too large)\nconst wasTruncated = treeData.truncated || false;\n\n// Filter files\nconst allFiles = treeData.tree\n  .filter(item => item.type === \"blob\")\n  .map(item => item.path);\n\nconst filteredFiles = allFiles\n  .filter(path => !shouldExclude(path))\n  .slice(0, MAX_FILES); // Apply limit\n\nreturn [{\n  owner,\n  repo,\n  filteredFiles: filteredFiles,\n  totalFilesInRepo: allFiles.length,\n  matchedFiles: filteredFiles.length,\n  limitReached: filteredFiles.length >= MAX_FILES,\n  treeTruncated: wasTruncated,\n  excludedPatterns: EXCLUSION_PATTERNS,\n  excludedExtensions: EXCLUDED_EXTENSIONS\n}];\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        -96
+      ],
+      "id": "2f6297db-3b1a-4924-935e-9fa35ea7f028",
+      "name": "Exclusion list"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{$json.owner}}/{{$json.repo}}/git/trees/{{$json.branch || \"main\"}}?recursive=1",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        32,
+        -96
+      ],
+      "id": "b07bfc8c-4345-47f4-bcf6-1d32b52fbfeb",
+      "name": "Recursive tree fetch",
+      "credentials": {
+        "githubApi": {
+          "id": "apJyVq3T7WoY8gFz",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst owner = data.owner;\nconst repo = data.repo;\nconst files = data.filteredFiles;\n\n// Validate we have files\nif (!files || files.length === 0) {\n  throw new Error('No files to process');\n}\n\n// Create array of items to fetch - filter out any invalid entries\nconst items = files\n  .filter(filePath => filePath && typeof filePath === 'string')\n  .map(filePath => ({\n    owner,\n    repo,\n    filePath,\n    url: `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`\n  }));\n\nconsole.log(`Prepared ${items.length} files for fetching`);\n\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        -96
+      ],
+      "id": "6b38ea1d-df42-40f4-b400-963756090fb7",
+      "name": "Url formation"
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": false
+        }
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        496,
+        128
+      ],
+      "id": "224cf6f0-bfd0-460b-b905-ba881ff19a4b",
+      "name": "Loop Over files to fetch"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.raw"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1008,
+        128
+      ],
+      "id": "e592052e-da4e-477f-b1a9-ffe36ec55f79",
+      "name": "fetch files iteratively",
+      "credentials": {
+        "githubApi": {
+          "id": "apJyVq3T7WoY8gFz",
+          "name": "GitHub account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const allItems = $input.all();\n\n// Get repo info\nconst switchData = $('Switch').first().json;\nconst owner = switchData.owner;\nconst repo = switchData.repo;\n\n// Collect statistics\nlet successCount = 0;\nlet failedCount = 0;\nconst filesByType = {};\nconst processedFiles = [];\nconst failedFiles = [];\n\nfor (const item of allItems) {\n  const metadata = item.json?.metadata;\n  \n  if (metadata?.filename) {\n    successCount++;\n    processedFiles.push(metadata.filename);\n    \n  } else {\n    failedCount++;\n    failedFiles.push(item.json);\n  }\n}\n\nreturn [{\n  owner,\n  repo,\n  summary: {\n    totalProcessed: allItems.length,\n    successful: successCount,\n    failed: failedCount,\n  },\n  processedFiles,\n  failedFiles,\n  timestamp: new Date().toISOString()\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        -64
+      ],
+      "id": "f25b7f23-5e92-459e-92fe-002b362830fb",
+      "name": "Aggregation"
+    },
+    {
+      "parameters": {
+        "amount": 0.2
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        128
+      ],
+      "id": "7b8de4f9-f762-4632-b740-aba9adc70c0c",
+      "name": "Wait",
+      "webhookId": "ea3934eb-94d2-48e4-a8ea-2962ce37a7a4"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={{ $json.apiRequest.contents[0].parts[0].text }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        1520,
+        128
+      ],
+      "id": "f298838c-34c7-4c95-b2b5-19bc4d423390",
+      "name": "Message a model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "796L7UVxuiAuNjKo",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "tableName": {
+          "__rl": true,
+          "value": "=analysis",
+          "mode": "id"
+        },
+        "options": {
+          "queryName": "match_documents"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        2096,
+        200
+      ],
+      "id": "a3f7c577-2504-4538-87f8-bf8814f0f50c",
+      "name": "Supabase Vector Store",
+      "credentials": {
+        "supabaseApi": {
+          "id": "jzAJmYXuNQD4LPa3",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2104,
+        424
+      ],
+      "id": "a64cb23a-b1c8-4ee1-9149-32957fb01aa8",
+      "name": "Embeddings Google Gemini",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "796L7UVxuiAuNjKo",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "filename",
+                "value": "={{ $('Wait').first().json.filePath}}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        2232,
+        424
+      ],
+      "id": "f47037cb-72a4-48bd-9613-96bbc7dd5cfe",
+      "name": "Default Data Loader"
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $input.first().json.content.parts[0].text;\nconst chunkSize = 500;\n\nlet chunks = [];\nfor (let i = 0; i < text.length; i += chunkSize) {\n  chunks.push(text.slice(i, i + chunkSize));\n}\n\nreturn chunks.map(chunk => ({\n  pageContent: chunk\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1872,
+        128
+      ],
+      "id": "e8830447-54f6-4bf0-8a15-3f8501d6dc30",
+      "name": "AI response parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "const fileData = $input.first().json;\n\n// Get the prepared file dataReplace 'Code1' with your Prepare URLs node name\nconst filePath =$('Wait').first().json.filePath;\nconst content = fileData.data || '';\n\n// Escape the content properly for JSON\nfunction escapeForJson(str) {\n  return str\n    .replace(/\\\\/g, '\\\\\\\\')\n    .replace(/\"/g, '\\\\\"')\n    .replace(/\\n/g, '\\\\n')\n    .replace(/\\r/g, '\\\\r')\n    .replace(/\\t/g, '\\\\t');\n}\n\nconst escapedContent = escapeForJson(content);\nconst escapedFilePath = escapeForJson(filePath);\n\n// Build the prompt\nconst prompt = `You are a senior software engineer doing code review. Analyze this file from a repository:\n\nFile: ${filePath}\n\nContent:\n\\`\\`\\`\n${content}\n\\`\\`\\`\n\nProvide a brief analysis (2-3 sentences) covering:\n- Purpose of this file\n- Key functionality or patterns\n- Any notable issues or good practices\n\nBe concise and specific.`;\n\nreturn [{\n  filePath: filePath,\n  fileContent: content,\n  contentSize: content.length,\n  apiRequest: {\n    contents: [{\n      parts: [{\n        text: prompt\n      }]\n    }],\n    generationConfig: {\n      temperature: 0.5,\n      maxOutputTokens: 500\n    }\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1296,
+        128
+      ],
+      "id": "6fbefcbc-19a6-40c7-bdf5-2f029ade1847",
+      "name": "AI api formation"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=I've analyzed the repository {{ $json.owner }}/{{ $json.repo }} and stored detailed analysis in a vector database.\n\nFiles successfully analyzed: {{ $json.summary.successful }}\n\n\n\nFiles processed:\n{{ $json.processedFiles.join('\\n') }}\n\nBased ONLY on the file names and structure above, provide a brief 3-4 sentence overview:\n1. What type of project is this (web app, library, API, etc.)?\n2. What is the primary tech stack/framework?\n3. What is the likely purpose or domain of this application?\n\nBe concise and base your answer only on the file structure."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        944,
+        -64
+      ],
+      "id": "ef112b3c-d002-49e1-9f1d-3677910d8f31",
+      "name": "Message a model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "796L7UVxuiAuNjKo",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst overviewResponse = $input.first().json.content.parts[0].text;\n\nconst owner = $('Aggregation').first().json.owner;\nconst repo = $('Aggregation').first().json.repo;\nconst metrics = $('Aggregation').first().json\n\n// Create minimal project summary\nconst projectSummary = {\n  owner,\n  repo,\n  overviewResponse,\n  stats: metrics.summary,\n  processedFiles: metrics.processedFiles,\n  vectorDbTable: 'analysis',\n  analyzedAt: metrics.timestamp,\n  status: 'complete'\n};\n\n// Return data to be stored by Supabase node\nreturn [{\n  summary: projectSummary,\n  success: true,\n  message: `✅ Repository ${owner}/${repo} analyzed successfully!`,\n  details: {\n    filesAnalyzed: metrics.summary.successful,\n    storedInVectorDB: true\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1296,
+        -64
+      ],
+      "id": "3c6a4852-4f63-4a66-b0fb-0ae1eea212d3",
+      "name": "Store project summary"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"status\": \"success\",\n  \"repository\": \"{{ $json.owner }}/{{ $json.repo }}\",\n  \"filesAnalyzed\": {{ $json.stats.successful }},\n  \"overview\": \"{{ $json.overview }}\",\n  \"timestamp\": \"{{ $json.details.analyzedAt }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1872,
+        -64
+      ],
+      "id": "67932acd-487a-4ef1-bb7a-dc1e748b031a",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "tableId": "repository_summaries",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "owner",
+              "fieldValue": "={{ $json.summary.owner }}"
+            },
+            {
+              "fieldId": "repo",
+              "fieldValue": "={{ $json.summary.repo }}"
+            },
+            {
+              "fieldId": "overview_response",
+              "fieldValue": "={{ $json.summary.overviewResponse }}"
+            },
+            {
+              "fieldId": "stats",
+              "fieldValue": "={{ $json.summary.stats }}"
+            },
+            {
+              "fieldId": "processed_files",
+              "fieldValue": "={{ $json.summary.processedFiles }}"
+            },
+            {
+              "fieldId": "vector_db_table",
+              "fieldValue": "={{ $json.summary.vectorDbTable }}"
+            },
+            {
+              "fieldId": "analyzed_at",
+              "fieldValue": "={{ $json.summary.analyzedAt }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $json.summary.status }}"
+            },
+            {
+              "fieldId": "success",
+              "fieldValue": "={{ $json.success }}"
+            },
+            {
+              "fieldId": "message",
+              "fieldValue": "={{ $json.message }}"
+            },
+            {
+              "fieldId": "details",
+              "fieldValue": "={{ $json.details }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1584,
+        -64
+      ],
+      "id": "9027c72e-39ea-40f9-9f77-a9a7996328f5",
+      "name": "Create a row",
+      "credentials": {
+        "supabaseApi": {
+          "id": "jzAJmYXuNQD4LPa3",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "You are an expert software engineer assistant that helps developers understand code repositories. You have access to a vector database containing analyzed code files from various repositories.\n\nWhen a user asks about a repository:\n1. First, identify the owner and repo name from the question\n2. Search the vector database using relevant keywords from their question\n3. Analyze the retrieved code and provide helpful, specific answers\n4. Reference the actual file names and code snippets when relevant\n5. If you don't find relevant information, be honest about it\n\nAlways be:\n- Specific and technical\n- Reference actual code when possible\n- Helpful in explaining complex code\n- Clear about what repository you're discussing\n\nDo not provide answers for the repositories that are not present in that vector database. Instead tell the user to analyse that repository"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        1232,
+        560
+      ],
+      "id": "7326f34b-c85f-4bf0-a4fa-1404a00df0f1",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1184,
+        784
+      ],
+      "id": "f4081b9a-78ce-4458-9493-d04f5ed52793",
+      "name": "Google Gemini Chat Model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "796L7UVxuiAuNjKo",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        1312,
+        784
+      ],
+      "id": "b04cb96a-3319-4d53-b90a-e3c9dcc68975",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "public": true,
+        "mode": "webhook",
+        "options": {
+          "responseMode": "responseNode"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        960,
+        560
+      ],
+      "id": "9a0d07cc-e6f1-4d50-bf2e-f0f961b9fc51",
+      "name": "When chat message received",
+      "webhookId": "4739b148-c4e5-422e-bf5c-f7b6ff8a7902"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1808,
+        560
+      ],
+      "id": "4a3cd685-49ae-479c-b2cc-169b285cb11d",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "tableName": {
+          "__rl": true,
+          "value": "analysis",
+          "mode": "list",
+          "cachedResultName": "analysis"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        1440,
+        784
+      ],
+      "id": "debec098-787c-4885-828e-ef964f4b1d2b",
+      "name": "Supabase Vector Store1",
+      "credentials": {
+        "supabaseApi": {
+          "id": "jzAJmYXuNQD4LPa3",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1520,
+        992
+      ],
+      "id": "dc71e26f-5983-4e6b-84e8-de719f34a4a9",
+      "name": "Embeddings Google Gemini1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "796L7UVxuiAuNjKo",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "Analysis started.... please wait",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -416,
+        -96
+      ],
+      "id": "88e9826a-9eb9-4def-811b-bbbf63cf8b62",
+      "name": "Respond to Webhook2"
+    }
+  ],
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "repoURL": "https://github.com/Aashirwad-Aadtiya/iTask-manage_todos",
+          "level": "deep"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse URL": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Recursive tree fetch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Exclusion list": {
+      "main": [
+        [
+          {
+            "node": "Url formation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recursive tree fetch": {
+      "main": [
+        [
+          {
+            "node": "Exclusion list",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Url formation": {
+      "main": [
+        [
+          {
+            "node": "Loop Over files to fetch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over files to fetch": {
+      "main": [
+        [
+          {
+            "node": "Aggregation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "fetch files iteratively": {
+      "main": [
+        [
+          {
+            "node": "AI api formation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "fetch files iteratively",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregation": {
+      "main": [
+        [
+          {
+            "node": "Message a model1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "AI response parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store": {
+      "main": [
+        [
+          {
+            "node": "Loop Over files to fetch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI response parser": {
+      "main": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI api formation": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model1": {
+      "main": [
+        [
+          {
+            "node": "Store project summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store project summary": {
+      "main": [
+        [
+          {
+            "node": "Create a row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a row": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini1": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store1",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook2": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "4271bffc-bdc4-4414-8a62-34e24d067278",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "8a2c044ee5dc040ca89efecb1611b1160103496692c716ada490c179dc32eb5f"
+  },
+  "id": "67d5NXPt7wJnX1WY",
+  "tags": []
+}
