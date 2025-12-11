@@ -84,3 +84,48 @@ File chunks
 Embeddings
 
 AI summaries & insights
+
+How It Works:
+Each GitHub URL triggers a multi-stage pipeline:
+
+1. Fetch & Parse Repo
+
+Validate URL
+
+Construct API routes
+
+Build exclusion list
+
+Fetch file tree recursively
+
+2. Process Files Iteratively
+
+Loop over files
+
+Retry file fetches
+
+Aggregate contents
+
+3. LLM Analysis
+
+Repo summary
+
+Classification
+
+Extract stack + architecture pattern
+
+Risk & quality assessment
+
+4. Embeddings + Storage
+
+Gemini embeddings → Supabase Vector DB
+
+Metadata stored alongside vectors
+
+5. Conversational Agent
+
+Hybrid RAG system
+
+Uses repo embeddings
+
+Generates context-aware replies
